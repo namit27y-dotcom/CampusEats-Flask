@@ -404,7 +404,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               canteenId: String(backendOrder.canteen_id),
               canteenName: backendOrder.canteen_name,
 
-              items: existing?.items || [],
+              items: (backendOrder.items && backendOrder.items.length > 0)
+                ? backendOrder.items.map((it: any) => ({
+                    id: String(it.menu_item_id || it.id),
+                    name: it.name || "Item",
+                    price: Number(it.price || 0),
+                    quantity: Number(it.quantity || 1),
+                    isVeg: Boolean(it.is_veg ?? true),
+                    customizationText: it.customization || undefined,
+                  }))
+                : (existing?.items || []),
 
               subtotal: Number(backendOrder.total_amount),
               discount: 0,
@@ -1080,182 +1089,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       throw new Error('Cart is empty');
     }
 
+    const isExplicitMock = import.meta.env.VITE_USE_MOCK === 'true';
 
-    const canteenId = Number(selectedCanteen.id);
-
-    const items = cart.map((item) => {
-      const extraAmount = Math.max(
-        0,
-        Number(item.unitPrice) - Number(item.menuItem.price)
-      );
-
-      const customization =
-        Object.entries(item.selectedCustomizations)
-          .map(([key, value]) => `${key}: ${value}`)
-          .join(' • ') || null;
-
-      return {
-        menuItemId: Number(item.menuItem.id),
-        quantity: item.quantity,
-        extraAmount,
-        customization,
-      };
-    });
-
-    try {
-      const data = await apiRequest('/orders', {
-        method: 'POST',
-        body: JSON.stringify({
-          canteenId,
-          items,
-          paymentMethod,
-        }),
-      });
-
-      if (!data.success || !data.order) {
-        throw new Error(data.message || 'Failed to place order');
-      }
-
-      const backendOrder = data.order;
-
-      const subtotal = cartTotal;
-      const discount = subtotal >= 100 ? 15 : 0;
-      const taxes = 0;
-      const total = Number(backendOrder.totalAmount);
-
-      const maxItemPrep = Math.max(
-        ...cart.map((c) => c.menuItem.prepTimeMinutes || 5)
-      );
-
-      const activeQueueOrders = orders.filter(
-        (o) =>
-          o.canteenId === selectedCanteen.id &&
-          ['CONFIRMED', 'ACCEPTED', 'PREPARING'].includes(o.status)
-      ).length;
-
-      const estimatedPrepMinutes =
-        maxItemPrep + Math.round(activeQueueOrders * 1.5);
-
-      const readyDate = new Date(
-        Date.now() + estimatedPrepMinutes * 60 * 1000
-      );
-
-      const estimatedReadyTime = readyDate.toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-
-      const pickupCounter =
-        selectedCanteen.counters[
-          Math.floor(
-            Math.random() * Math.min(2, selectedCanteen.counters.length)
-          )
-        ] || 'Pickup Counter 1';
-
-      const statusMap: Record<string, OrderStatus> = {
-        placed: 'CONFIRMED',
-        accepted: 'ACCEPTED',
-        preparing: 'PREPARING',
-        ready: 'READY',
-        completed: 'COLLECTED',
-        cancelled: 'CANCELLED',
-      };
-
-      const frontendStatus =
-        statusMap[backendOrder.status] || 'CONFIRMED';
-
-      const newOrder: Order = {
-        id: String(backendOrder.id),
-        tokenNumber: backendOrder.tokenNumber,
-        userId: currentUser.id,
-        userName: currentUser.name,
-        userRole: currentUser.role,
-        canteenId: selectedCanteen.id,
-        canteenName: selectedCanteen.name,
-
-        items: cart.map((item) => ({
-          id: item.menuItem.id,
-          name: item.menuItem.name,
-          price: item.unitPrice,
-          quantity: item.quantity,
-          isVeg: item.menuItem.isVeg,
-          customizationText:
-            Object.entries(item.selectedCustomizations)
-              .map(([_, value]) => value)
-              .join(', ') || undefined,
-        })),
-
-        subtotal,
-        discount,
-        taxes,
-        total,
-
-        paymentMethod,
-        paymentTransactionId:
-          backendOrder.paymentTransactionId || undefined,
-        paymentStatus:
-          String(backendOrder.paymentStatus || 'paid').toLowerCase() === 'pending'
-            ? 'PENDING'
-            : 'PAID',
-
-        status: frontendStatus,
-
-        pickupSlot,
-        pickupCounter,
-        estimatedReadyTime,
-        estimatedPrepMinutes,
-
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      if (data.walletBalance !== null && data.walletBalance !== undefined) {
-        setCurrentUserState((prev) => ({
-          ...prev,
-          walletBalance: Number(data.walletBalance),
-        }));
-      }
-
-      setOrders((prev) => [newOrder, ...prev]);
-
-      // Join socket room for live status updates
-      socketRef.current?.emit("joinOrder", backendOrder.id);
-
-      setMenuItems((prev) =>
-        prev.map((menuItem) => {
-          const cartItem = cart.find(
-            (item) => item.menuItem.id === menuItem.id
-          );
-
-          if (!cartItem) return menuItem;
-
-          const newStock = Math.max(
-            0,
-            menuItem.stockQuantity - cartItem.quantity
-          );
-
-          return {
-            ...menuItem,
-            stockQuantity: newStock,
-            inStock: newStock > 0,
-          };
-        })
-      );
-
-      clearCart();
-
-      playOrderPlacedSound();
-
-      addNotification({
-        title: `Order Placed: Token ${backendOrder.tokenNumber} ðŸŽ‰`,
-        message: `Your order #${backendOrder.id} is confirmed at ${selectedCanteen.name}. Estimated Ready: ${estimatedReadyTime}`,
-        tokenNumber: backendOrder.tokenNumber,
-        type: 'order_confirmed',
-      });
-
-    } catch (error: any) {
-      console.warn('Backend order API unreachable, placing order locally in demo mode:', error);
-
+    // 1. Explicit Mock Mode (VITE_USE_MOCK=true)
+    if (isExplicitMock) {
       const subtotal = cartTotal;
       const discount = subtotal >= 100 ? 15 : 0;
       const taxes = 0;
@@ -1347,6 +1184,180 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       return localOrder;
     }
+
+    // 2. Real Backend Order Flow (VITE_USE_MOCK=false) - Backend is the sole source of truth
+    const canteenId = Number(selectedCanteen.id);
+
+    const items = cart.map((item) => {
+      const extraAmount = Math.max(
+        0,
+        Number(item.unitPrice) - Number(item.menuItem.price)
+      );
+
+      const customization =
+        Object.entries(item.selectedCustomizations)
+          .map(([key, value]) => `${key}: ${value}`)
+          .join(' • ') || null;
+
+      return {
+        menuItemId: Number(item.menuItem.id),
+        quantity: item.quantity,
+        extraAmount,
+        customization,
+      };
+    });
+
+    const data = await apiRequest('/orders', {
+      method: 'POST',
+      body: JSON.stringify({
+        canteenId,
+        items,
+        paymentMethod,
+      }),
+    });
+
+    if (!data.success || !data.order) {
+      throw new Error(data.message || 'Failed to place order');
+    }
+
+    const backendOrder = data.order;
+
+    const subtotal = backendOrder.subtotal !== undefined ? Number(backendOrder.subtotal) : cartTotal;
+    const discount = backendOrder.discount !== undefined ? Number(backendOrder.discount) : (subtotal >= 100 ? 15 : 0);
+    const taxes = backendOrder.taxes !== undefined ? Number(backendOrder.taxes) : 0;
+    const total = Number(backendOrder.totalAmount);
+
+    const maxItemPrep = Math.max(
+      ...cart.map((c) => c.menuItem.prepTimeMinutes || 5)
+    );
+
+    const activeQueueOrders = orders.filter(
+      (o) =>
+        o.canteenId === selectedCanteen.id &&
+        ['CONFIRMED', 'ACCEPTED', 'PREPARING'].includes(o.status)
+    ).length;
+
+    const estimatedPrepMinutes =
+      maxItemPrep + Math.round(activeQueueOrders * 1.5);
+
+    const readyDate = new Date(
+      Date.now() + estimatedPrepMinutes * 60 * 1000
+    );
+
+    const estimatedReadyTime = readyDate.toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    const pickupCounter =
+      selectedCanteen.counters[
+        Math.floor(
+          Math.random() * Math.min(2, selectedCanteen.counters.length)
+        )
+      ] || 'Pickup Counter 1';
+
+    const statusMap: Record<string, OrderStatus> = {
+      placed: 'CONFIRMED',
+      accepted: 'ACCEPTED',
+      preparing: 'PREPARING',
+      ready: 'READY',
+      completed: 'COLLECTED',
+      cancelled: 'CANCELLED',
+    };
+
+    const frontendStatus =
+      statusMap[String(backendOrder.status).toLowerCase()] || 'CONFIRMED';
+
+    const newOrder: Order = {
+      id: String(backendOrder.id),
+      tokenNumber: String(backendOrder.tokenNumber || backendOrder.token_number),
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      canteenId: selectedCanteen.id,
+      canteenName: selectedCanteen.name,
+
+      items: cart.map((item) => ({
+        id: item.menuItem.id,
+        name: item.menuItem.name,
+        price: item.unitPrice,
+        quantity: item.quantity,
+        isVeg: item.menuItem.isVeg,
+        customizationText:
+          Object.entries(item.selectedCustomizations)
+            .map(([_, value]) => value)
+            .join(', ') || undefined,
+      })),
+
+      subtotal,
+      discount,
+      taxes,
+      total,
+
+      paymentMethod: backendOrder.paymentMethod || paymentMethod,
+      paymentTransactionId:
+        backendOrder.paymentTransactionId || backendOrder.payment_transaction_id || undefined,
+      paymentStatus:
+        String(backendOrder.paymentStatus || backendOrder.payment_status || 'paid').toLowerCase() === 'pending'
+          ? 'PENDING'
+          : 'PAID',
+
+      status: frontendStatus,
+
+      pickupSlot,
+      pickupCounter,
+      estimatedReadyTime,
+      estimatedPrepMinutes,
+
+      createdAt: backendOrder.created_at || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (data.walletBalance !== null && data.walletBalance !== undefined) {
+      setCurrentUserState((prev) => ({
+        ...prev,
+        walletBalance: Number(data.walletBalance),
+      }));
+    }
+
+    setOrders((prev) => [newOrder, ...prev]);
+
+    // Join socket room for live status updates
+    socketRef.current?.emit("joinOrder", backendOrder.id);
+
+    setMenuItems((prev) =>
+      prev.map((menuItem) => {
+        const cartItem = cart.find(
+          (item) => item.menuItem.id === menuItem.id
+        );
+
+        if (!cartItem) return menuItem;
+
+        const newStock = Math.max(
+          0,
+          menuItem.stockQuantity - cartItem.quantity
+        );
+
+        return {
+          ...menuItem,
+          stockQuantity: newStock,
+          inStock: newStock > 0,
+        };
+      })
+    );
+
+    clearCart();
+
+    playOrderPlacedSound();
+
+    addNotification({
+      title: `Order Placed: Token ${newOrder.tokenNumber} 🎉`,
+      message: `Your order #${newOrder.id} is confirmed at ${selectedCanteen.name}. Estimated Ready: ${estimatedReadyTime}`,
+      tokenNumber: newOrder.tokenNumber,
+      type: 'order_confirmed',
+    });
+
+    return newOrder;
   };
 
   const cancelOrder = (orderId: string): boolean => {
@@ -1398,12 +1409,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       CANCELLED: "cancelled",
     };
 
+    const frontendStatusMap: Record<string, OrderStatus> = {
+      placed: "CONFIRMED",
+      accepted: "ACCEPTED",
+      preparing: "PREPARING",
+      ready: "READY",
+      completed: "COLLECTED",
+      cancelled: "CANCELLED",
+    };
+
     const backendStatus = backendStatusMap[newStatus];
 
     if (!backendStatus) {
       console.error("Invalid order status:", newStatus);
       return;
     }
+
+    const currentOrder = orders.find((o) => String(o.id) === String(orderId));
+
+    console.log(`[updateOrderStatus] Initiating PATCH /kitchen/orders/${orderId}/status:`, {
+      orderId,
+      requestedStatus: newStatus,
+      backendStatus,
+      currentOrderLocalStatus: currentOrder?.status,
+      orderCanteenId: currentOrder?.canteenId,
+      authenticatedUserId: currentUser?.id,
+      authenticatedUserRole: currentUser?.role,
+      authenticatedUserCanteenId: (currentUser as any)?.canteen_id,
+    });
 
     try {
       const data = await apiRequest(`/kitchen/orders/${orderId}/status`, {
@@ -1413,17 +1446,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }),
       });
 
+      console.log(`[updateOrderStatus] Backend response:`, data);
+
       if (!data.success) {
         alert(data.message || "Failed to update order status");
         return;
       }
 
+      const effectiveStatus = data.status
+        ? (frontendStatusMap[String(data.status).toLowerCase()] || newStatus)
+        : newStatus;
+
       setOrders((prev) =>
         prev.map((o) => {
-          if (o.id === orderId) {
+          if (String(o.id) === String(orderId)) {
             return {
               ...o,
-              status: newStatus,
+              status: effectiveStatus,
               updatedAt: new Date().toISOString(),
             };
           }
@@ -1431,31 +1470,61 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         })
       );
 
-      const order = orders.find((o) => o.id === orderId);
+      const order = orders.find((o) => String(o.id) === String(orderId));
       if (!order) return;
 
-      if (newStatus === "PREPARING") {
+      if (effectiveStatus === "PREPARING") {
         addNotification({
           title: `Kitchen Preparing: Token ${order.tokenNumber} 👨‍🍳`,
           message: `Your food is now being prepared at ${order.canteenName}.`,
           tokenNumber: order.tokenNumber,
         });
-      } else if (newStatus === "READY") {
+      } else if (effectiveStatus === "READY") {
         addNotification({
           title: `Order Ready: Token ${order.tokenNumber} 🔔`,
           message: `Your order is ready for pickup at ${order.canteenName}.`,
           tokenNumber: order.tokenNumber,
         });
-      } else if (newStatus === "COLLECTED") {
+      } else if (effectiveStatus === "COLLECTED") {
         addNotification({
           title: `Order Collected: Token ${order.tokenNumber} ✅`,
           message: `Order ${order.tokenNumber} has been collected.`,
           tokenNumber: order.tokenNumber,
         });
       }
-    } catch (error) {
-      console.error("Failed to update order status:", error);
-      alert("Unable to update order status. Please try again.");
+    } catch (error: any) {
+      console.error(`[updateOrderStatus] Backend request failed:`, {
+        httpStatus: error?.status,
+        responseBody: error?.data,
+        errorMessage: error?.message,
+        orderId,
+        requestedStatus: newStatus,
+        backendStatus,
+        currentDbStatus: error?.data?.currentStatus,
+        authenticatedUserRole: currentUser?.role,
+        authenticatedUserCanteenId: (currentUser as any)?.canteen_id,
+        orderCanteenId: currentOrder?.canteenId,
+      });
+
+      // If backend reports the order is already in another state (stale frontend state), sync local state!
+      if (error?.data?.currentStatus) {
+        const dbStatus = String(error.data.currentStatus).toLowerCase();
+        const syncedFrontendStatus = frontendStatusMap[dbStatus];
+        if (syncedFrontendStatus) {
+          console.log(`[updateOrderStatus] Synchronizing stale local order #${orderId} state to DB status: ${dbStatus} (${syncedFrontendStatus})`);
+          setOrders((prev) =>
+            prev.map((o) =>
+              String(o.id) === String(orderId)
+                ? { ...o, status: syncedFrontendStatus, updatedAt: new Date().toISOString() }
+                : o
+            )
+          );
+        }
+      }
+
+      // Display the REAL backend message instead of a generic alert
+      const messageToDisplay = error?.data?.message || error?.message || "Failed to update order status";
+      alert(messageToDisplay);
     }
   };
 

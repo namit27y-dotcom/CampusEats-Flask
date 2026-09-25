@@ -1,18 +1,35 @@
+# Node & Frontend
 node_modules/
-build/
 dist/
+build/
 coverage/
-.DS_Store
 *.log
+.DS_Store
+
+# Environment Variables & Secrets
+.env
 .env*
 !.env.example
-node_modules/
-.env
+backend_flask/.env
+backend_flask/.env*
+!backend_flask/.env.example
 
+# Python & Flask
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+backend_flask/venv/
+venv/
+ENV/
+env/
+.pytest_cache/
+
+# Scratch & JSON dumps
 login.json
 kitchen-login.json
 order.json
 status.json
-
 *.backup.tsx
 *.before-*.tsx

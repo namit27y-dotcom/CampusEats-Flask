@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "test": "node backend/scripts/testPhase1Security.js && node backend/scripts/testPhase2.js && node backend/scripts/testPhase3Payments.js && node backend/scripts/testPhase3BAiAndFlow.js && node backend/scripts/testInrCurrency.js && node backend/scripts/testRbacVisibility.js && node backend/scripts/testKitchenSocketSync.js"
+    "test": "tsc --noEmit",
+    "test:flask": "python -m unittest backend_flask/test_flask_backend.py"
   },
   "dependencies": {
     "@google/genai": "^2.22.0",

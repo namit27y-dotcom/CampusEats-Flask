@@ -100,7 +100,10 @@ export const apiRequest = async (
       data.message ||
       data.error ||
       `Request failed with status ${response.status} (${response.statusText})`;
-    throw new Error(errorMsg);
+    const error: any = new Error(errorMsg);
+    error.status = response.status;
+    error.data = data;
+    throw error;
   }
 
   return data;
